@@ -8,7 +8,7 @@ package layers
 
 import (
 	"encoding/binary"
-	"github.com/google/gopacket"
+	"github.com/kaminek/gopacket"
 )
 
 type USBEventType uint8

@@ -10,7 +10,7 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"github.com/google/gopacket"
+	"github.com/kaminek/gopacket"
 )
 
 type PFDirection uint8

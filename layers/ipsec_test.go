@@ -7,7 +7,7 @@
 package layers
 
 import (
-	"github.com/google/gopacket"
+	"github.com/kaminek/gopacket"
 	"reflect"
 	"testing"
 )
