@@ -35,10 +35,11 @@ struct metadata {
 int pfring_readpacketdatato_wrapper(
     pfring* ring,
     uintptr_t buffer,
-    uintptr_t meta) {
+    uintptr_t meta,
+    uint8_t wait_for_packet) {
   struct metadata* ci = (struct metadata* )meta;
   struct pfring_pkthdr hdr;
-  int ret = pfring_recv(ring, (u_char**)buffer, 0, &hdr, 1);
+  int ret = pfring_recv(ring, (u_char**)buffer, 0, &hdr, wait_for_packet);
   ci->timestamp_ns = hdr.extended_hdr.timestamp_ns;
   ci->caplen = hdr.caplen;
   ci->len = hdr.len;
@@ -71,6 +72,7 @@ const errorBufferSize = 256
 type Ring struct {
 	cptr                    *C.pfring
 	useExtendedPacketHeader bool
+	waitForPacket           uint8
 	interfaceIndex          int
 	mu                      sync.Mutex
 
@@ -102,7 +104,10 @@ func NewRing(device string, snaplen uint32, flags Flag) (ring *Ring, _ error) {
 	if cptr == nil || err != nil {
 		return nil, fmt.Errorf("pfring NewRing error: %v", err)
 	}
-	ring = &Ring{cptr: cptr}
+	ring = &Ring{
+		cptr:          cptr,
+		waitForPacket: 1, // by default wait for incomming packets
+	}
 
 	if flags&FlagLongHeader == FlagLongHeader {
 		ring.useExtendedPacketHeader = true
@@ -150,7 +155,14 @@ func (n NextResult) Error() string {
 
 // shared code (Read-functions), that fetches a packet + metadata from pf_ring
 func (r *Ring) getNextBufPtrLocked(ci *gopacket.CaptureInfo) error {
-	result := NextResult(C.pfring_readpacketdatato_wrapper(r.cptr, C.uintptr_t(uintptr(unsafe.Pointer(&r.bufPtr))), C.uintptr_t(uintptr(unsafe.Pointer(&r.meta)))))
+	result := NextResult(
+		C.pfring_readpacketdatato_wrapper(
+			r.cptr,
+			C.uintptr_t(uintptr(unsafe.Pointer(&r.bufPtr))),
+			C.uintptr_t(uintptr(unsafe.Pointer(&r.meta))),
+			C.u_int8_t(r.waitForPacket),
+		),
+	)
 	if result != NextOk {
 		return result
 	}
@@ -290,6 +302,21 @@ func (r *Ring) SetPollDuration(durationMillis uint) error {
 		return fmt.Errorf("Unable to set poll duration, got error code %d", rv)
 	}
 	return nil
+}
+
+// SetNoPacketNonBlocking Check packet availability without blocking and waiting for a packet
+// the default behaviour is to block and wait for incomming packets.
+func (r *Ring) SetNoPacketNonBlocking() {
+	r.mu.Lock()
+	r.waitForPacket = 0
+	r.mu.Unlock()
+}
+
+// SetNoPacketBlocking  block waiting for a packet
+func (r *Ring) SetNoPacketBlocking() {
+	r.mu.Lock()
+	r.waitForPacket = 1
+	r.mu.Unlock()
 }
 
 // SetBPFFilter sets the BPF filter for the ring.
